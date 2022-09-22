@@ -15,7 +15,7 @@ jobs:
       SUCCESS: ${{ steps.successCheck.outputs.SUCCESS }}
 
     steps:
-      - name: Get issue info and download file
+      - name: Get issue info
         id: getIssueInfo
         uses: actions/github-script@v6
         with:
@@ -53,34 +53,20 @@ jobs:
               filename = url_filename;
             }
 
-            let pr;
-            if (url.indexOf("http") === 0) {
-                pr = require("http");
-            } else if (url.indexOf("https") === 0) {
-                pr = require("https");
-            } else {
-              throw new Error("url error");
-            }
-
-            // 下载文件
-            pr.get(url, (res) => {
-              // Open file in local filesystem
-              const file = fs.createWriteStream(filename);
-              // Write data into local file
-              res.pipe(file);
-              // Close the file
-              file.on('finish', () => {
-                file.close();
-                console.log(`File downloaded!`);
-              });
-            }).on("error", (err) => {
-              console.log("Error: ", err.message);
-            });
-
             core.setOutput('FILE_NAME', filename);
             console.log("The file name is", filename)
             core.setOutput('FILE_URL', url);
             console.log("The file url is", url)
+
+      - name: Download file from url
+        uses: carlosperate/download-file-action@v1
+        id: downloadFile
+        with:
+          file-url: ${{ steps.getIssueInfo.outputs.FILE_URL }}
+          file-name: ${{ steps.getIssueInfo.outputs.FILE_NAME }}
+          location: './'
+          # md5: ''
+          # sha256: ''
 
       - name: Tar package
         run: "tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}"
@@ -125,7 +111,7 @@ jobs:
             console.log("is success?", success);
 
             if(success){
-              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](https://github.com/${context.repo.owner}/${context.repo.repo}/archive/refs/tags/${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz)`;
+              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${{ github.ref }}/${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz)`;
               labels = ['success'];
             }else{
               const jobsResponse = await github.request(`GET /repos/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}}/jobs`, {
