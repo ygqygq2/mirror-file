@@ -1,0 +1,161 @@
+name: Issue triggers publish release package
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  download_to_publish:
+    name: Download file then publish release package
+    runs-on: ubuntu-latest
+
+    outputs:
+      FILE_NAME: ${{ steps.getIssueInfo.outputs.FILE_NAME }}
+      FILE_URL: ${{ steps.getIssueInfo.outputs.FILE_URL }}
+      SUCCESS: ${{ steps.successCheck.outputs.SUCCESS }}
+
+    steps:
+      - name: Get issue info and download file
+        id: getIssueInfo
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const fs = require('fs');
+
+            // comment 显示构建进展链接
+            const issues_body = `构建进展，详见 [构建任务](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}})`
+            const issuesComment = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: issues_body
+            });
+            console.log("create issues comment resp:", issuesComment["status"]);
+
+            // 使用 title 获取下载链接
+            const title = context?.payload?.issue?.title.trim() || '';
+
+            const url = title;
+            const pos = url.lastIndexOf("/");
+            if(pos == -1){
+              pos = url.lastIndexOf("\\");
+            }
+            const url_filename = url.substr(pos +1);
+
+            // 使用 body 获取文件名
+            const body = context?.payload?.issue?.body.trim() || '';
+
+            let filename;
+            if (body.length > 0) {
+              filename = body;
+            } else {
+              filename = url_filename;
+            }
+
+            let pr;
+            if (url.indexOf("http") === 0) {
+                pr = require("http");
+            } else if (url.indexOf("https") === 0) {
+                pr = require("https");
+            } else {
+              throw new Error("url error");
+            }
+
+            // 下载文件
+            pr.get(url, (res) => {
+              // Open file in local filesystem
+              const file = fs.createWriteStream(filename);
+              // Write data into local file
+              res.pipe(file);
+              // Close the file
+              file.on('finish', () => {
+                file.close();
+                console.log(`File downloaded!`);
+              });
+            }).on("error", (err) => {
+              console.log("Error: ", err.message);
+            });
+
+            core.setOutput('FILE_NAME', filename);
+            console.log("The file name is", filename)
+            core.setOutput('FILE_URL', url);
+            console.log("The file url is", url)
+
+      - name: Tar package
+        run: "tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}"
+
+      - name: Publish to release package
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz
+          asset_name: ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+          body: "Download from ${{ steps.getIssueInfo.outputs.FILE_URL }}"
+
+      - name: Success check
+        id: successCheck
+        uses: actions/github-script@v6
+        if: ${{ success() }}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            core.setOutput('SUCCESS', true)
+
+      - name: Close Issues
+        id: closeIssues
+        uses: actions/github-script@v6
+        if: ${{ always() }}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const issuesResponse = await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: "closed"
+            });
+            console.log("update issues resp:", issuesResponse["status"] == 200 ? "success" : "failed" );
+
+            let labels = [];
+            let body = `构建失败，详见 [构建任务](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}})`;
+            const success = String(${{ steps.successCheck.outputs.SUCCESS }}).toLowerCase() == "true";
+            console.log("is success?", success);
+
+            if(success){
+              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](https://github.com/${context.repo.owner}/${context.repo.repo}/archive/refs/tags/${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz)`;
+              labels = ['success'];
+            }else{
+              const jobsResponse = await github.request(`GET /repos/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}}/jobs`, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: ${{ github.run_id }}
+              });
+              console.log("jobs",jobsResponse['data']);
+
+              body += "\n\n 日志:\n\n";
+              for(let job of jobsResponse['data']['jobs']){
+                  body += "- ["+job.name+"]("+job.html_url+")";
+              }
+              labels = ['failure'];
+            }
+
+            const issuesComment = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+            });
+            console.log(issuesComment);
+            console.log("create issues comment resp:", issuesComment["status"] == 201 ? "success" : "failed" );
+
+            if(labels){
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labels
+              });
+            }
