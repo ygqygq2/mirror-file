@@ -36,6 +36,16 @@ jobs:
             // 使用 title 获取下载链接
             const title = context?.payload?.issue?.title?.trim() || '';
 
+            // 从 tag 下的 release 获取 body，用于后文更新 release body 展示下载链接
+            const release = await github.rest.releases.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: context.ref.replace('refs/tags/', '')
+            });
+            console.log("Get release by tag resp:", release["status"]);
+            console.log(release);
+            console.log("release data:", release.body);
+
             const url = title;
             const pos = url.lastIndexOf("/");
             if(pos == -1){
@@ -80,6 +90,7 @@ jobs:
           asset_name: ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz
           tag: ${{ github.ref }}
           overwrite: true
+          release_name: Download file list
           body: "Download from ${{ steps.getIssueInfo.outputs.FILE_URL }}"
 
       - name: Success check
