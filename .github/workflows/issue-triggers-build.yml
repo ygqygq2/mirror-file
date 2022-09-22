@@ -37,7 +37,7 @@ jobs:
             const title = context?.payload?.issue?.title?.trim() || '';
 
             // 从 tag 下的 release 获取 body，用于后文更新 release body 展示下载链接
-            const release = await github.rest.repo.getReleaseByTag({
+            const release = await github.rest.repos.getReleaseByTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 tag: context.ref.replace('refs/tags/', '')
