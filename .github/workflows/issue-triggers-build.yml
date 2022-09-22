@@ -72,6 +72,7 @@ jobs:
         run: "tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}"
 
       - name: Publish to release package
+        id: publishRelease
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +112,7 @@ jobs:
             console.log("is success?", success);
 
             if(success){
-              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${{ github.ref }}/${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz)`;
+              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.publishRelease.outputs.browser_download_url }})`;
               labels = ['success'];
             }else{
               const jobsResponse = await github.request(`GET /repos/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}}/jobs`, {
