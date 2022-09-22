@@ -34,7 +34,7 @@ jobs:
             console.log("create issues comment resp:", issuesComment["status"]);
 
             // 使用 title 获取下载链接
-            const title = context?.payload?.issue?.title.trim() || '';
+            const title = context?.payload?.issue?.title?.trim() || '';
 
             const url = title;
             const pos = url.lastIndexOf("/");
@@ -44,7 +44,7 @@ jobs:
             const url_filename = url.substr(pos +1);
 
             // 使用 body 获取文件名
-            const body = context?.payload?.issue?.body.trim() || '';
+            const body = context?.payload?.issue?.body?.trim() || '';
 
             let filename;
             if (body.length > 0) {
