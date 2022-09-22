@@ -12,6 +12,8 @@ jobs:
     outputs:
       FILE_NAME: ${{ steps.getIssueInfo.outputs.FILE_NAME }}
       FILE_URL: ${{ steps.getIssueInfo.outputs.FILE_URL }}
+      FILE_HASH: ${{ steps.generateHash.outputs.FILE_HASH }}
+      IS_CONTAINS: ${{ steps.generateHash.outputs.IS_CONTAINS }}
       RELEASE_ID: ${{ steps.getIssueInfo.outputs.RELEASE_ID }}
       RELEASE_BODY: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
       SUCCESS: ${{ steps.successCheck.outputs.SUCCESS }}
@@ -63,7 +65,6 @@ jobs:
             });
             const release_id = release?.data?.id || '';
             let release_body = release?.data?.body || '';
-            release_body += `${filename} Download from ${url}\r\n`
 
             core.setOutput('FILE_NAME', filename);
             console.log("The file name is", filename);
@@ -82,11 +83,21 @@ jobs:
           # md5: ''
           # sha256: ''
 
+      - name: Generate hash value
+        id: generateHash
+        run: |
+          file_hash=${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
+          echo "::set-output name=FILE_HASH::$file_hash"
+          is_contains=${{ contains(steps.getIssueInfo.outputs.RELEASE_BODY, $file_hash) }}
+          echo "::set-output name=IS_CONTAINS::$is_contains"
+
       - name: Tar package
+        if: ${{ ! steps.generateHash.outputs.IS_CONTAINS }}
         run: "tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}"
 
       - name: Publish to release package
         id: publishRelease
+        if: ${{ ! setup.generateHash.outputs.IS_CONTAINS }}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -113,15 +124,21 @@ jobs:
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
+            const file_name = ${{ steps.getIssueInfo.outputs.FILE_NAME }};
             const release_id = ${{ steps.getIssueInfo.outputs.RELEASE_ID }};
             const release_body = ${{ steps.getIssueInfo.outputs.RELEASE_BODY }};
-            const updateRelease = await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release_id,
-              body: release_body
-            });
-            console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed" );
+            const file_hash = ${{ steps.generateHash.outputs.FILE_HASH }};
+            const is_contains = ${{ steps.generateHash.outputs.IS_CONTAINS }};
+            if (!is_contains) {
+              release_body += `${file_hash} [${filename}](${url})\r\n`
+              const updateRelease = await github.request(`PATCH /repos/${context.repo.owner}/${context.repo.repo}/releases/${release_id}`, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release_id,
+                body: release_body
+              });
+              console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed" );
+            }
 
             const issuesResponse = await github.rest.issues.update({
               owner: context.repo.owner,
