@@ -57,9 +57,9 @@ jobs:
 
             // 从 release 获取 body，用于后文更新 release body 展示下载链接
             const release = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag: context.ref.replace('refs/heads/', '')
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: context.ref.replace('refs/heads/', '')
             });
             const release_id = release?.data?.id || '';
             let release_body = release?.data?.body || '';
@@ -113,11 +113,13 @@ jobs:
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
+            const release_id = ${{ steps.getIssueInfo.outputs.RELEASE_ID }};
+            const release_body = ${{ steps.getIssueInfo.outputs.RELEASE_BODY }};
             const updateRelease = await github.rest.repos.updateRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: ${{ steps.getIssueInfo.outputs.RELEASE_ID }}
-                body: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release_id,
+              body: release_body
             });
             console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed" );
 
