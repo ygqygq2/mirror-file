@@ -65,6 +65,7 @@ jobs:
             });
             const release_id = release?.data?.id || '';
             let release_body = release?.data?.body || '';
+            release_body = release_body.replace('\r\n', '\\r\\n');
 
             core.setOutput('FILE_NAME', filename);
             console.log("The file name is", filename);
@@ -85,19 +86,22 @@ jobs:
 
       - name: Generate hash value
         id: generateHash
+        env:
+          file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
+          release_body: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
         run: |
-          file_hash=${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
-          echo "::set-output name=FILE_HASH::$file_hash"
-          is_contains=${{ contains(steps.getIssueInfo.outputs.RELEASE_BODY, $file_hash) }}
+          echo "::set-output name=FILE_HASH::${file_hash}"
+          is_contains="${{ contains(env.release_body, env.file_hash) }}"
           echo "::set-output name=IS_CONTAINS::$is_contains"
 
       - name: Tar package
-        if: ${{ ! steps.generateHash.outputs.IS_CONTAINS }}
-        run: "tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}"
+        if: ${{ steps.generateHash.outputs.IS_CONTAINS == 'false' }}
+        run: |
+          tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}
 
       - name: Publish to release package
         id: publishRelease
-        if: ${{ ! setup.generateHash.outputs.IS_CONTAINS }}
+        if: ${{ steps.generateHash.outputs.IS_CONTAINS == 'false' }}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -117,29 +121,32 @@ jobs:
           script: |
             core.setOutput('SUCCESS', true)
 
-      - name: Close Issues
+      - name: Close issues
         id: closeIssues
         uses: actions/github-script@v6
         if: ${{ always() }}
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            const file_name = ${{ steps.getIssueInfo.outputs.FILE_NAME }};
-            const release_id = ${{ steps.getIssueInfo.outputs.RELEASE_ID }};
-            const release_body = ${{ steps.getIssueInfo.outputs.RELEASE_BODY }};
-            const file_hash = ${{ steps.generateHash.outputs.FILE_HASH }};
-            const is_contains = ${{ steps.generateHash.outputs.IS_CONTAINS }};
-            if (!is_contains) {
-              release_body += `${file_hash} [${filename}](${url})\r\n`
-              const updateRelease = await github.request(`PATCH /repos/${context.repo.owner}/${context.repo.repo}/releases/${release_id}`, {
+            // 更新 release
+            const file_name = "${{ steps.getIssueInfo.outputs.FILE_NAME }}";
+            const file_url = "${{ steps.getIssueInfo.outputs.FILE_URL }}";
+            const release_id = "${{ steps.getIssueInfo.outputs.RELEASE_ID }}";
+            let release_body = "${{ steps.getIssueInfo.outputs.RELEASE_BODY }}";
+            const file_hash = "${{ steps.generateHash.outputs.FILE_HASH }}";
+            const is_contains = "${{ steps.generateHash.outputs.IS_CONTAINS }}";
+            if (is_contains === 'false') {
+              release_body = `${release_body}${file_hash} [${file_name}](${file_url})\r\n`;
+              const updateRelease = await github.request('PATCH /repos/{owner}/{repo}/releases/{release_id}', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 release_id: release_id,
                 body: release_body
               });
-              console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed" );
+              console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed");
             }
 
+            // 关闭 issues
             const issuesResponse = await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -157,7 +164,7 @@ jobs:
               body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.publishRelease.outputs.browser_download_url }})`;
               labels = ['success'];
             }else{
-              const jobsResponse = await github.request(`GET /repos/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}}/jobs`, {
+              const jobsResponse = await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 run_id: ${{ github.run_id }}
@@ -177,7 +184,6 @@ jobs:
                 issue_number: context.issue.number,
                 body: body
             });
-            console.log(issuesComment);
             console.log("Create issues comment resp:", issuesComment["status"] == 201 ? "success" : "failed" );
 
             if(labels){
