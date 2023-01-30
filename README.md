@@ -7,3 +7,7 @@
 ## 使用方法
 
 * 新建 issue，标题为文件下载地址，内容为要保存的文件名
+
+## 历史文件列表
+
+[files-list.md](https://raw.githubusercontent.com/ygqygq2/mirror-file/output/files-list.md)
