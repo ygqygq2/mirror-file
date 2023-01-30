@@ -89,6 +89,7 @@ jobs:
           file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
         run: |
           echo "FILE_HASH=${file_hash}" >> $GITHUB_OUTPUT
+          [ ! -d ${FILES_LIST_DIR} ] && mkdir ${FILES_LIST_DIR}
           grep "${file_hash}" "${FILES_LIST}" >/dev/null && IS_FILE_IN=true || IS_FILE_IN=false
           echo "IS_FILE_IN=$IS_FILE_IN" >> $GITHUB_OUTPUT
 
