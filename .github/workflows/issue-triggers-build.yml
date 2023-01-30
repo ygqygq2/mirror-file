@@ -25,16 +25,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
 
       - name: Create output branch
         run: |
-          if git show-ref -q --heads $OUTPUT_BRANCH ;then
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          if git show-ref $OUTPUT_BRANCH; then
             git checkout $OUTPUT_BRANCH
           else
             git checkout -b $OUTPUT_BRANCH
+            git pull origin $OUTPUT_BRANCH --rebase || true
+            touch $FILES_LIST
+            [ ! -d ${FILES_LIST_DIR} ] && mkdir ${FILES_LIST_DIR}
           fi
+          ls -la
 
       - name: Get issue info
         id: getIssueInfo
@@ -96,7 +100,6 @@ jobs:
           file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
         run: |
           echo "FILE_HASH=${file_hash}" >> $GITHUB_OUTPUT
-          [ ! -d ${FILES_LIST_DIR} ] && mkdir ${FILES_LIST_DIR}
           grep "${file_hash}" "${FILES_LIST}" >/dev/null && IS_FILE_IN=true || IS_FILE_IN=false
           echo "IS_FILE_IN=$IS_FILE_IN" >> $GITHUB_OUTPUT
 
@@ -129,11 +132,13 @@ jobs:
 
       - name: Update files list
         id: updateFilesList
-        if: ${{ steps.successCheck.outputs.SUCCESS == 'true' }}
+        if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' && steps.successCheck.outputs.SUCCESS == 'true' }}
         run: |
+          \cp ${FILES_LIST} ${FILES_LIST_DIR}/          
           echo -e "[${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz](${{ steps.publishRelease.outputs.browser_download_url }}) ${{ steps.generateHash.outputs.FILE_HASH }} [${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.getIssueInfo.outputs.FILE_URL }})    \n" >> ${FILES_LIST_DIR}/${FILES_LIST}
 
       - name: Push files list
+        if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' }}
         uses: crazy-max/ghaction-github-pages@v3
         with:
           target_branch: ${{ env.OUTPUT_BRANCH }}
