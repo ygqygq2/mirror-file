@@ -6,7 +6,7 @@
 
 ## 使用方法
 
-* 新建 issue，标题为文件下载地址，内容为要保存的文件名
+[新建issues](https://github.com/ygqygq2/mirror-file/issues/new?assignees=&labels=porter&template=packages.md)，标题为文件下载地址，内容为要保存的文件名
 
 ## 历史文件列表
 
