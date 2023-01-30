@@ -4,6 +4,11 @@ on:
   issues:
     types: [opened]
 
+env:
+  OUTPUT_BRANCH: output
+  FILES_LIST_DIR: dist
+  FILES_LIST: files-list.md
+
 jobs:
   download_to_publish:
     name: Download file then publish release package
@@ -13,12 +18,17 @@ jobs:
       FILE_NAME: ${{ steps.getIssueInfo.outputs.FILE_NAME }}
       FILE_URL: ${{ steps.getIssueInfo.outputs.FILE_URL }}
       FILE_HASH: ${{ steps.generateHash.outputs.FILE_HASH }}
-      IS_CONTAINS: ${{ steps.generateHash.outputs.IS_CONTAINS }}
-      RELEASE_ID: ${{ steps.getIssueInfo.outputs.RELEASE_ID }}
-      RELEASE_BODY: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
+      IS_FILE_IN: ${{ steps.generateHash.outputs.IS_FILE_IN }}
+      browser_download_url: ${{ steps.publishRelease.outputs.browser_download_url }}
       SUCCESS: ${{ steps.successCheck.outputs.SUCCESS }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ env.OUTPUT_BRANCH }}
+          fetch-depth: 1
+
       - name: Get issue info
         id: getIssueInfo
         uses: actions/github-script@v6
@@ -57,25 +67,13 @@ jobs:
               filename = url_filename;
             }
 
-            // 从 release 获取 body，用于后文更新 release body 展示下载链接
-            const release = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: context.ref.replace('refs/heads/', '')
-            });
-            const release_id = release?.data?.id || '';
-            let release_body = release?.data?.body || '';
-            release_body = release_body.replace('\r\n', '\\r\\n');
-
             core.setOutput('FILE_NAME', filename);
             console.log("The file name is", filename);
             core.setOutput('FILE_URL', url);
             console.log("The file url is", url);
-            core.setOutput('RELEASE_ID', release_id);
-            core.setOutput('RELEASE_BODY', release_body);
 
       - name: Download file from url
-        uses: carlosperate/download-file-action@v1
+        uses: carlosperate/download-file-action@v2
         id: downloadFile
         with:
           file-url: ${{ steps.getIssueInfo.outputs.FILE_URL }}
@@ -84,24 +82,24 @@ jobs:
           # md5: ''
           # sha256: ''
 
+      # 用于判断列表文件是否更新
       - name: Generate hash value
         id: generateHash
         env:
           file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
-          release_body: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
         run: |
-          echo "::set-output name=FILE_HASH::${file_hash}"
-          is_contains="${{ contains(env.release_body, env.file_hash) }}"
-          echo "::set-output name=IS_CONTAINS::$is_contains"
+          echo "FILE_HASH=${file_hash}" >> $GITHUB_OUTPUT
+          grep "${file_hash}" "${FILES_LIST}" >/dev/null && IS_FILE_IN=true || IS_FILE_IN=false
+          echo "IS_FILE_IN=$IS_FILE_IN" >> $GITHUB_OUTPUT
 
       - name: Tar package
-        if: ${{ steps.generateHash.outputs.IS_CONTAINS == 'false' }}
+        if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' }}
         run: |
           tar -czvf ${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz ${{ steps.getIssueInfo.outputs.FILE_NAME }}
 
       - name: Publish to release package
         id: publishRelease
-        if: ${{ steps.generateHash.outputs.IS_CONTAINS == 'false' }}
+        if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' }}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -110,7 +108,7 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           release_name: Download file list
-          body: ${{ steps.getIssueInfo.outputs.RELEASE_BODY }}
+          body: "文件列表：https://github.com//${GITHUB_REPOSITORY}/blob/${OUTPUT_BRANCH}/${FILES_LIST}"
 
       - name: Success check
         id: successCheck
@@ -120,6 +118,20 @@ jobs:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
             core.setOutput('SUCCESS', true)
+
+      - name: Update files list
+        id: updateFilesList
+        if: ${{ steps.successCheck.outputs.SUCCESS == 'true' }}
+        run: |
+          echo -e "[${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz](${{ steps.publishRelease.outputs.browser_download_url }}) ${{ steps.generateHash.outputs.FILE_HASH }} [${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.getIssueInfo.outputs.FILE_URL }})    \n" >> ${FILES_LIST_DIR}/${FILES_LIST}
+
+      - name: Push files list
+        uses: crazy-max/ghaction-github-pages@v3
+        with:
+          target_branch: ${{ env.OUTPUT_BRANCH }}
+          build_dir: ${{ env.FILES_LIST_DIR }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Close issues
         id: closeIssues
@@ -132,19 +144,8 @@ jobs:
             const file_name = "${{ steps.getIssueInfo.outputs.FILE_NAME }}";
             const file_url = "${{ steps.getIssueInfo.outputs.FILE_URL }}";
             const release_id = "${{ steps.getIssueInfo.outputs.RELEASE_ID }}";
-            let release_body = "${{ steps.getIssueInfo.outputs.RELEASE_BODY }}";
             const file_hash = "${{ steps.generateHash.outputs.FILE_HASH }}";
             const is_contains = "${{ steps.generateHash.outputs.IS_CONTAINS }}";
-            if (is_contains === 'false') {
-              release_body = `${release_body}${file_hash} [${file_name}](${file_url})\r\n`;
-              const updateRelease = await github.request('PATCH /repos/{owner}/{repo}/releases/{release_id}', {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release_id,
-                body: release_body
-              });
-              console.log("Update release resp:", updateRelease["status"] == 200 ? "success" : "failed");
-            }
 
             // 关闭 issues
             const issuesResponse = await github.rest.issues.update({
@@ -155,6 +156,7 @@ jobs:
             });
             console.log("Update issues resp:", issuesResponse["status"] == 200 ? "success" : "failed" );
 
+            // 设置 labels body 变量
             let labels = [];
             let body = `构建失败，详见 [构建任务](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{github.run_id}})`;
             const success = String(${{ steps.successCheck.outputs.SUCCESS }}).toLowerCase() == "true";
@@ -178,6 +180,7 @@ jobs:
               labels = ['failure'];
             }
 
+            // 创建回复
             const issuesComment = await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -186,6 +189,7 @@ jobs:
             });
             console.log("Create issues comment resp:", issuesComment["status"] == 201 ? "success" : "failed" );
 
+            // 标签
             if(labels){
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
