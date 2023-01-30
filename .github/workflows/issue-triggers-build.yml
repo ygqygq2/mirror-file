@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 env:
-  OUTPUT_BRANCH: output
+  OUTPUT_BRANCH: main  # 请注意是否存在分支
   FILES_LIST_DIR: dist
   FILES_LIST: files-list.md
 
