@@ -134,7 +134,7 @@ jobs:
         id: updateFilesList
         if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' && steps.successCheck.outputs.SUCCESS == 'true' }}
         run: |
-          \cp ${FILES_LIST} ${FILES_LIST_DIR}/          
+          \cp ${FILES_LIST} README.md ${FILES_LIST_DIR}/          
           echo -e "[${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz](${{ steps.publishRelease.outputs.browser_download_url }}) ${{ steps.generateHash.outputs.FILE_HASH }} [${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.getIssueInfo.outputs.FILE_URL }})    \n" >> ${FILES_LIST_DIR}/${FILES_LIST}
 
       - name: Push files list
