@@ -116,7 +116,7 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           release_name: Download file list
-          body: "文件列表：https://github.com//${GITHUB_REPOSITORY}/blob/${OUTPUT_BRANCH}/${FILES_LIST}"
+          body: "文件列表：https://github.com/${{github.repository}}/blob/${{env.OUTPUT_BRANCH}}/${{env.FILES_LIST}}"
 
       - name: Success check
         id: successCheck
