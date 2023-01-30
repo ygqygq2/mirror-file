@@ -5,7 +5,7 @@ on:
     types: [opened]
 
 env:
-  OUTPUT_BRANCH: main  # 请注意是否存在分支
+  OUTPUT_BRANCH: output  # 请注意是否存在分支
   FILES_LIST_DIR: dist
   FILES_LIST: files-list.md
 
@@ -26,8 +26,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ env.OUTPUT_BRANCH }}
           fetch-depth: 1
+
+      - name: Create output branch
+        run: |
+          if git show-ref -q --heads $OUTPUT_BRANCH ;then
+            git checkout $OUTPUT_BRANCH
+          else
+            git checkout -b $OUTPUT_BRANCH
+          fi
 
       - name: Get issue info
         id: getIssueInfo
