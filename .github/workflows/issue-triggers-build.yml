@@ -18,13 +18,19 @@ jobs:
       FILE_NAME: ${{ steps.getIssueInfo.outputs.FILE_NAME }}
       FILE_URL: ${{ steps.getIssueInfo.outputs.FILE_URL }}
       FILE_HASH: ${{ steps.generateHash.outputs.FILE_HASH }}
+      FILE_LINE: ${{ steps.generateHash.outputs.FILE_LINE }}
       IS_FILE_IN: ${{ steps.generateHash.outputs.IS_FILE_IN }}
       browser_download_url: ${{ steps.publishRelease.outputs.browser_download_url }}
       SUCCESS: ${{ steps.successCheck.outputs.SUCCESS }}
 
     steps:
+      - name: Pause until all workflows are completed
+        uses: willgarcia/workflow-wait-action@0.1.0
+
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Create output branch
         run: |
@@ -35,9 +41,9 @@ jobs:
           else
             git checkout -b $OUTPUT_BRANCH
             git pull origin $OUTPUT_BRANCH --rebase || true
-            touch $FILES_LIST
-            [ ! -d ${FILES_LIST_DIR} ] && mkdir ${FILES_LIST_DIR}
           fi
+          [ ! -f ${FILES_LIST} ] && touch ${FILES_LIST}
+          [ ! -d ${FILES_LIST_DIR} ] && mkdir ${FILES_LIST_DIR}
           ls -la
 
       - name: Get issue info
@@ -100,7 +106,8 @@ jobs:
           file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
         run: |
           echo "FILE_HASH=${file_hash}" >> $GITHUB_OUTPUT
-          grep "${file_hash}" "${FILES_LIST}" >/dev/null && IS_FILE_IN=true || IS_FILE_IN=false
+          file_line=$(grep "${file_hash}" "${FILES_LIST}"|awk -F"[()]" '{print $2}') && IS_FILE_IN=true || IS_FILE_IN=false
+          [ ! -z "$file_line" ] && echo "FILE_LINE=$file_line" >> $GITHUB_OUTPUT
           echo "IS_FILE_IN=$IS_FILE_IN" >> $GITHUB_OUTPUT
 
       - name: Tar package
@@ -134,7 +141,7 @@ jobs:
         id: updateFilesList
         if: ${{ steps.generateHash.outputs.IS_FILE_IN == 'false' && steps.successCheck.outputs.SUCCESS == 'true' }}
         run: |
-          \cp ${FILES_LIST} README.md ${FILES_LIST_DIR}/          
+          \cp ${FILES_LIST} ${FILES_LIST_DIR}/
           echo -e "[${{ steps.getIssueInfo.outputs.FILE_NAME }}.tar.gz](${{ steps.publishRelease.outputs.browser_download_url }}) ${{ steps.generateHash.outputs.FILE_HASH }} [${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.getIssueInfo.outputs.FILE_URL }})    \n" >> ${FILES_LIST_DIR}/${FILES_LIST}
 
       - name: Push files list
@@ -153,13 +160,6 @@ jobs:
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            // 更新 release
-            const file_name = "${{ steps.getIssueInfo.outputs.FILE_NAME }}";
-            const file_url = "${{ steps.getIssueInfo.outputs.FILE_URL }}";
-            const release_id = "${{ steps.getIssueInfo.outputs.RELEASE_ID }}";
-            const file_hash = "${{ steps.generateHash.outputs.FILE_HASH }}";
-            const is_contains = "${{ steps.generateHash.outputs.IS_CONTAINS }}";
-
             // 关闭 issues
             const issuesResponse = await github.rest.issues.update({
               owner: context.repo.owner,
@@ -175,8 +175,14 @@ jobs:
             const success = String(${{ steps.successCheck.outputs.SUCCESS }}).toLowerCase() == "true";
             console.log("Is success?", success);
 
+            const file_line = `${{ steps.generateHash.outputs.FILE_LINE }}`;
+            const file_name = `${{ steps.getIssueInfo.outputs.FILE_NAME }}`;
+            let download_url = `${{ steps.publishRelease.outputs.browser_download_url }}`;
             if(success){
-              body = `构建完成，您可以点击下载 <br/>\n[${{ steps.getIssueInfo.outputs.FILE_NAME }}](${{ steps.publishRelease.outputs.browser_download_url }})`;
+              if (file_line !== null || file_line !== undefined || file_line !== '') {
+                download_url = file_line;
+              }
+              body = `构建完成，您可以点击下载 <br/>\n[${file_name}](${download_url})`;
               labels = ['success'];
             }else{
               const jobsResponse = await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', {
