@@ -110,8 +110,15 @@ jobs:
           file_hash: ${{ hashFiles(steps.getIssueInfo.outputs.FILE_NAME) }}
         run: |
           echo "FILE_HASH=${file_hash}" >> $GITHUB_OUTPUT
-          file_line=$(grep "${file_hash}" "${FILES_LIST}"|awk -F"[()]" '{print $2}') && IS_FILE_IN=true || IS_FILE_IN=false
-          [ ! -z "$file_line" ] && echo "FILE_LINE=$file_line" >> $GITHUB_OUTPUT
+          file_line=$(grep "${file_hash}" "${FILES_LIST}"|awk -F"[()]" '{print $2}')
+          if [ ! -z "$file_line" ]; then
+            IS_FILE_IN=true
+            echo "文件存在，不会下载"
+            echo "FILE_LINE=$file_line" >> $GITHUB_OUTPUT
+          else
+            IS_FILE_IN=false
+            echo "文件不存在，会下载"
+          fi
           echo "IS_FILE_IN=$IS_FILE_IN" >> $GITHUB_OUTPUT
 
       - name: Tar package
@@ -183,7 +190,7 @@ jobs:
             const file_name = `${{ steps.getIssueInfo.outputs.FILE_NAME }}`;
             let download_url = `${{ steps.publishRelease.outputs.browser_download_url }}`;
             if(success){
-              if (file_line !== null || file_line !== undefined || file_line !== '') {
+              if(file_line !== '') {
                 download_url = file_line;
               }
               body = `构建完成，您可以点击下载 <br/>\n[${file_name}](${download_url})`;
