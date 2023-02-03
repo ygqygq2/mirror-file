@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Pause until all workflows are completed
-        uses: willgarcia/workflow-wait-action@0.1.0
+        uses: ygqygq2/workflow-wait-action@v1
         with:
           timeout: 1200
           interval: 10
